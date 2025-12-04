@@ -333,8 +333,8 @@
         // 🚨 CRITICAL: AUTHORIZATION LIST
         // Add all Google email addresses (including your own) that should have access.
         const ALLOWED_USERS = [
-            "user1@example.com",     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 1
-            "admin@yourdomain.com",  // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 2
+            "starksgalaxykenya@gmail.com",     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 1
+            "angayacyrillestark@gmail.com",  // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 2
             "john.doe@gmail.com"     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 3
         ];
         // ====================================================================
