@@ -1,250 +1,1210 @@
-// ====================================================================
-// 🚨 CRITICAL: AUTHORIZATION LIST
-// Add all Google email addresses (including your own) that should have access.
-// This list MUST match the one in your front-end HTML file for full security.
-// ====================================================================
-const ALLOWED_USERS = [
-    "user1@example.com",     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 1
-    "admin@yourdomain.com",  // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 2
-    "john.doe@gmail.com"     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 3
-];
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Petty Cash Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Custom scrollbar */
+        .scrollbar-thin::-webkit-scrollbar {
+            width: 6px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 3px;
+        }
+        .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        /* Animation for new transactions */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+        
+        /* Custom loading spinner */
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top: 3px solid #fff;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Notification styles */
+        .custom-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 1000;
+            transition: transform 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-50 to-indigo-50 min-h-screen">
+    <div id="app" class="container mx-auto p-4">
+        <div id="auth-container" class="hidden max-w-md mx-auto mt-16">
+            <div class="bg-white rounded-xl shadow-lg p-8">
+                <h1 class="text-3xl font-bold text-center text-indigo-700 mb-2">
+                    <i class="fas fa-cash-register mr-2"></i>Petty Cash Manager
+                </h1>
+                <p class="text-gray-600 text-center mb-8">Sign in to manage your petty cash</p>
+                
+                <div id="login-form">
+                    <h2 class="text-xl font-semibold mb-6 text-center">Sign In</h2>
+                    
+                    <button id="google-login-btn" 
+                            class="w-full bg-red-600 text-white font-medium py-3 rounded-lg hover:bg-red-700 transition duration-300 flex justify-center items-center">
+                        <i class="fab fa-google mr-2"></i>Sign In with Google
+                    </button>
 
-const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // 👈 OPTIONAL: Replace with your actual Sheet ID for better performance
-const SHEET_NAME = 'Transactions'; // 👈 Ensure this matches your sheet tab name
-
-// ====================================================================
-// HELPER FUNCTIONS
-// ====================================================================
-
-/**
- * Checks if the provided email is in the authorized list.
- * @param {string} email The email address to check.
- * @returns {boolean} True if the user is authorized.
- */
-function isUserAuthorized(email) {
-  if (!email) return false;
-  return ALLOWED_USERS.includes(email.toLowerCase());
-}
-
-/**
- * Opens the specified spreadsheet and sheet.
- * @returns {GoogleAppsScript.Spreadsheet.Sheet | null} The sheet object or null on failure.
- */
-function openSheet() {
-  try {
-    const ss = SpreadsheetApp.openById(SPREADSHEET_ID) || SpreadsheetApp.getActiveSpreadsheet();
-    return ss.getSheetByName(SHEET_NAME);
-  } catch (e) {
-    Logger.log("Error opening sheet: " + e.toString());
-    return null;
-  }
-}
-
-/**
- * Loads all transactions and converts them into an array of objects.
- * @returns {Array<Object>} An array of transaction objects.
- */
-function loadAllTransactions(sheet) {
-  if (!sheet) return [];
-  
-  const range = sheet.getDataRange();
-  if (range.getNumRows() <= 1) { // Only header row exists
-    return [];
-  }
-  
-  const values = range.getValues();
-  const headers = values[0]; // ["ID", "Date", "Time", "Type", "Amount", "Description", "Category", "UserEmail"]
-  const data = values.slice(1);
-  
-  return data.map(row => {
-    // Determine the sign of the amount based on the Type column
-    const type = row[3]; // "Type" column
-    let amount = parseFloat(row[4]); // "Amount" column
+                    <div id="login-error" class="mt-4 p-3 bg-red-50 text-red-700 rounded-lg text-sm hidden"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="main-app" class="hidden">
+            <header class="flex flex-col md:flex-row justify-between items-center mb-8">
+                <div>
+                    <h1 class="text-3xl font-bold text-indigo-700">
+                        <i class="fas fa-cash-register mr-2"></i>Petty Cash Manager
+                    </h1>
+                    <p class="text-gray-600">Track and manage your daily cash transactions</p>
+                </div>
+                <div class="flex items-center space-x-4 mt-4 md:mt-0">
+                    <div class="text-right">
+                        <p class="font-medium" id="user-name">User Name</p>
+                        <p class="text-sm text-gray-600" id="user-email">user@example.com</p>
+                    </div>
+                    <button id="logout-btn" 
+                            class="px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition flex items-center">
+                        <i class="fas fa-sign-out-alt mr-2"></i>Logout
+                    </button>
+                </div>
+            </header>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white rounded-xl shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-green-100 text-green-600 rounded-lg mr-4">
+                            <i class="fas fa-wallet text-2xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 text-sm">Current Balance</p>
+                            <p id="current-balance" class="text-3xl font-bold text-gray-800">KSh0.00</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-blue-100 text-blue-600 rounded-lg mr-4">
+                            <i class="fas fa-arrow-up text-2xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 text-sm">Today's Income</p>
+                            <p id="today-income" class="text-3xl font-bold text-gray-800">KSh0.00</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-xl shadow p-6">
+                    <div class="flex items-center">
+                        <div class="p-3 bg-red-100 text-red-600 rounded-lg mr-4">
+                            <i class="fas fa-arrow-down text-2xl"></i>
+                        </div>
+                        <div>
+                            <p class="text-gray-600 text-sm">Today's Expenses</p>
+                            <p id="today-expenses" class="text-3xl font-bold text-gray-800">KSh0.00</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow mb-8">
+                        <div class="p-6 border-b">
+                            <h2 class="text-xl font-semibold text-gray-800">
+                                <i class="fas fa-plus-circle mr-2 text-indigo-600"></i>Add New Transaction
+                            </h2>
+                        </div>
+                        <div class="p-6">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                <div>
+                                    <label class="block text-gray-700 text-sm font-medium mb-2" for="transaction-type">
+                                        Transaction Type
+                                    </label>
+                                    <div class="flex rounded-lg border border-gray-300 overflow-hidden">
+                                        <button id="type-income" class="transaction-type-btn flex-1 py-3 text-center font-medium bg-green-50 text-green-700 border-r border-gray-300">
+                                            <i class="fas fa-arrow-down mr-2"></i>Income
+                                        </button>
+                                        <button id="type-expense" class="transaction-type-btn flex-1 py-3 text-center font-medium bg-red-50 text-red-700">
+                                            <i class="fas fa-arrow-up mr-2"></i>Expense
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-gray-700 text-sm font-medium mb-2" for="amount">
+                                        Amount (KSh)
+                                    </label>
+                                    <input id="amount" type="number" step="0.01" min="0.01"
+                                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                           placeholder="0.00">
+                                </div>
+                            </div>
+                            
+                            <div class="mb-6">
+                                <label class="block text-gray-700 text-sm font-medium mb-2" for="description">
+                                    Description
+                                </label>
+                                <input id="description" type="text"
+                                       class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                       placeholder="e.g., Office supplies, Client payment, etc.">
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                                <div>
+                                    <label class="block text-gray-700 text-sm font-medium mb-2" for="category">
+                                        Category
+                                    </label>
+                                    <select id="category"
+                                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition">
+                                        <option value="General">General</option>
+                                        <option value="Office Supplies">Office Supplies</option>
+                                        <option value="Travel">Travel</option>
+                                        <option value="Food & Beverage">Food & Beverage</option>
+                                        <option value="Utilities">Utilities</option>
+                                        <option value="Maintenance">Maintenance</option>
+                                        <option value="Client Payment">Client Payment</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-gray-700 text-sm font-medium mb-2" for="date">
+                                        Date
+                                    </label>
+                                    <input id="date" type="text"
+                                           class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition"
+                                           placeholder="Select date">
+                                </div>
+                            </div>
+                            
+                            <button id="add-transaction-btn"
+                                    class="w-full bg-indigo-600 text-white font-medium py-3 rounded-lg hover:bg-indigo-700 transition duration-300 flex justify-center items-center">
+                                <i class="fas fa-plus mr-2"></i>Add Transaction
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-xl shadow">
+                        <div class="p-6 border-b flex justify-between items-center">
+                            <h2 class="text-xl font-semibold text-gray-800">
+                                <i class="fas fa-list-alt mr-2 text-indigo-600"></i>Today's Transactions
+                            </h2>
+                            <button id="end-day-btn" 
+                                    class="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-lg hover:from-purple-700 hover:to-indigo-700 transition flex items-center">
+                                <i class="fas fa-file-export mr-2"></i>End Day & Generate Report
+                            </button>
+                        </div>
+                        <div class="p-4">
+                            <div id="transactions-list" class="max-h-96 overflow-y-auto scrollbar-thin">
+                                <div class="text-center py-10 text-gray-500">
+                                    <i class="fas fa-exchange-alt text-4xl mb-4"></i>
+                                    <p>No transactions for today yet.</p>
+                                    <p class="text-sm">Add your first transaction above.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="space-y-8">
+                    <div class="bg-white rounded-xl shadow p-6">
+                        <h2 class="text-xl font-semibold text-gray-800 mb-6">
+                            <i class="fas fa-chart-line mr-2 text-indigo-600"></i>Balance Trend
+                        </h2>
+                        <div class="h-64">
+                            <canvas id="balance-chart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white rounded-xl shadow">
+                        <div class="p-6 border-b">
+                            <h2 class="text-xl font-semibold text-gray-800">
+                                <i class="fas fa-history mr-2 text-indigo-600"></i>Recent Transactions
+                            </h2>
+                        </div>
+                        <div class="p-4">
+                            <div id="recent-transactions" class="space-y-4 max-h-80 overflow-y-auto scrollbar-thin">
+                                <div class="text-center py-8 text-gray-500">
+                                    <i class="fas fa-history text-3xl mb-3"></i>
+                                    <p>No recent transactions.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="report-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+                <div class="bg-white rounded-xl shadow-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <div class="p-6 border-b flex justify-between items-center">
+                        <h2 class="text-2xl font-bold text-gray-800">Daily Cash Report</h2>
+                        <button id="close-report-modal" class="text-gray-500 hover:text-gray-700">
+                            <i class="fas fa-times text-2xl"></i>
+                        </button>
+                    </div>
+                    <div class="p-6">
+                        <div id="report-content">
+                            </div>
+                        <div class="mt-8 flex justify-between">
+                            <button id="print-report-btn" class="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center">
+                                <i class="fas fa-print mr-2"></i>Print Report
+                            </button>
+                            <button id="download-report-btn" class="px-5 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition flex items-center">
+                                <i class="fas fa-download mr-2"></i>Download as CSV
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading-overlay" class="fixed inset-0 bg-white bg-opacity-90 flex flex-col items-center justify-center z-50">
+            <div class="spinner border-indigo-500 border-t-indigo-500 mb-4"></div>
+            <p class="text-lg font-medium text-gray-700">Loading Petty Cash Manager...</p>
+        </div>
+    </div>
     
-    // Ensure the amount is stored with the correct sign for internal calculation
-    if (type.toLowerCase() === 'expense') {
-        amount = -Math.abs(amount); // Enforce negative for expense
-    } else {
-        amount = Math.abs(amount); // Enforce positive for income
-    }
-    
-    return {
-      id: row[0],
-      date: row[1], // YYYY-MM-DD
-      createdAt: row[2], // ISO 8601 string for time stamp
-      type: type.toLowerCase(),
-      amount: amount, // Signed amount for easy calculation
-      description: row[5],
-      category: row[6],
-      userEmail: row[7]
-    };
-  }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by most recent first
-}
+    <script type="module">
+        // Import Firebase modules for authentication only
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-app.js";
+        import { 
+            getAuth, 
+            GoogleAuthProvider, 
+            signInWithPopup,    
+            signOut,
+            onAuthStateChanged
+        } from "https://www.gstatic.com/firebasejs/12.6.0/firebase-auth.js";
 
-/**
- * Calculates the current running balance.
- * @param {Array<Object>} transactions The array of transaction objects.
- * @returns {number} The current balance.
- */
-function calculateCurrentBalance(transactions) {
-  return transactions.reduce((sum, t) => sum + t.amount, 0);
-}
+        // Your web app's Firebase configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyDyXa3jDRhJYbpxc0xF_xcBZ-eZG7Ru5Cw",
+            authDomain: "petty-cash-mng-2.firebaseapp.com",
+            projectId: "petty-cash-mng-2",
+            storageBucket: "petty-cash-mng-2.firebasestorage.app",
+            messagingSenderId: "594339453480",
+            appId: "1:594339453480:web:1ea90d467a232cac68f31d"
+        };
 
-/**
- * Adds a new transaction to the sheet.
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet The sheet object.
- * @param {Object} transaction The transaction data object.
- */
-function addTransactionToSheet(sheet, transaction) {
-  const amount = Math.abs(transaction.amount); // Always store positive value in the sheet
-  const type = transaction.amount >= 0 ? 'Income' : 'Expense';
-  
-  sheet.appendRow([
-    transaction.id,
-    transaction.date,
-    transaction.createdAt, // This is the full ISO time string for sorting
-    type,
-    amount,
-    transaction.description,
-    transaction.category,
-    transaction.userEmail
-  ]);
-  SpreadsheetApp.flush(); // Forces the spreadsheet to write the data immediately
-}
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
 
-/**
- * Deletes a transaction from the sheet based on its ID.
- * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet The sheet object.
- * @param {string} transactionId The ID of the transaction to delete.
- */
-function deleteTransactionFromSheet(sheet, transactionId) {
-  const data = sheet.getDataRange().getValues();
-  let rowToDelete = -1;
-  
-  // Start from the second row (index 1) to skip header
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === transactionId) { // Column A is the ID
-      rowToDelete = i + 1; // Spreadsheet row number (1-indexed)
-      break;
-    }
-  }
-  
-  if (rowToDelete !== -1) {
-    sheet.deleteRow(rowToDelete);
-    SpreadsheetApp.flush();
-    return true;
-  }
-  return false;
-}
+        // Google Apps Script Web App URL Base (using Deployment ID)
+        const GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwyjzdyqpJAcmi7owoTdazJOUzwDIcebx2necNZq10FAZosOUp7cgG0BCc03GqPR3Ds';
 
-// ====================================================================
-// API ENTRY POINTS
-// ====================================================================
+        // ====================================================================
+        // 🚨 CRITICAL: AUTHORIZATION LIST
+        // Add all Google email addresses (including your own) that should have access.
+        const ALLOWED_USERS = [
+            "user1@example.com",     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 1
+            "admin@yourdomain.com",  // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 2
+            "john.doe@gmail.com"     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 3
+        ];
+        // ====================================================================
 
-/**
- * Handles GET requests, primarily used for JSONP loading (loadTransactions).
- * @param {GoogleAppsScript.Events.DoGet} e The event parameter.
- * @returns {GoogleAppsScript.Content.TextOutput} JSONP response.
- */
-function doGet(e) {
-  if (!e.parameter.data) {
-    return ContentService.createTextOutput(JSON.stringify({ 
-      success: false, 
-      message: "No data parameter provided." 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-  
-  try {
-    // Parse the JSON data passed via URL parameter
-    const request = JSON.parse(e.parameter.data);
-    const callback = e.parameter.callback;
+        // Application State
+        let currentUser = null;
+        let transactions = [];
+        let balance = 0;
+        let selectedTransactionType = 'expense'; // Default to expense
+        
+        // DOM Elements
+        const authContainer = document.getElementById('auth-container');
+        const mainApp = document.getElementById('main-app');
+        const loginBtn = document.getElementById('google-login-btn');
+        const loginError = document.getElementById('login-error');
+        const logoutBtn = document.getElementById('logout-btn');
+        const userName = document.getElementById('user-name');
+        const userEmail = document.getElementById('user-email');
+        
+        // Transaction Elements
+        const typeIncomeBtn = document.getElementById('type-income');
+        const typeExpenseBtn = document.getElementById('type-expense');
+        const amountInput = document.getElementById('amount');
+        const descriptionInput = document.getElementById('description');
+        const categorySelect = document.getElementById('category');
+        const dateInput = document.getElementById('date');
+        const addTransactionBtn = document.getElementById('add-transaction-btn');
+        const transactionsList = document.getElementById('transactions-list');
+        const recentTransactions = document.getElementById('recent-transactions');
+        const currentBalance = document.getElementById('current-balance');
+        const todayIncome = document.getElementById('today-income');
+        const todayExpenses = document.getElementById('today-expenses');
+        
+        // Report Elements
+        const endDayBtn = document.getElementById('end-day-btn');
+        const reportModal = document.getElementById('report-modal');
+        const closeReportModal = document.getElementById('close-report-modal');
+        const reportContent = document.getElementById('report-content');
+        const printReportBtn = document.getElementById('print-report-btn');
+        const downloadReportBtn = document.getElementById('download-report-btn');
+        
+        // Loading Overlay
+        const loadingOverlay = document.getElementById('loading-overlay');
+        
+        // Chart
+        let balanceChart;
+        
+        // Global variable to hold data returned from Google Script (for the LOAD function)
+        let scriptDataResponse = null; 
 
-    // 1. AUTHORIZATION CHECK
-    if (!isUserAuthorized(request.userEmail)) {
-      return ContentService.createTextOutput(`${callback}(${JSON.stringify({ 
-        success: false, 
-        message: "Authorization failed: User not authorized to view data." 
-      })})`).setMimeType(ContentService.MimeType.JAVASCRIPT);
-    }
+        // This function is designed to be called by the Google Apps Script in a custom way
+        window.handleScriptResponse = function(data) {
+            scriptDataResponse = data;
+        };
+        
+        // Initialize Date Picker
+        flatpickr("#date", {
+            dateFormat: "Y-m-d",
+            defaultDate: new Date(),
+            maxDate: new Date()
+        });
+        
+        // Set default date to today
+        dateInput.value = new Date().toISOString().split('T')[0];
+        
+        // Initialize Transaction Type Selection
+        function selectTransactionType(type) {
+            selectedTransactionType = type;
+            if (type === 'income') {
+                typeIncomeBtn.classList.remove('bg-green-50', 'text-green-700');
+                typeIncomeBtn.classList.add('bg-green-600', 'text-white');
+                typeExpenseBtn.classList.remove('bg-red-600', 'text-white');
+                typeExpenseBtn.classList.add('bg-red-50', 'text-red-700');
+            } else {
+                typeExpenseBtn.classList.remove('bg-red-50', 'text-red-700');
+                typeExpenseBtn.classList.add('bg-red-600', 'text-white');
+                typeIncomeBtn.classList.remove('bg-green-600', 'text-white');
+                typeIncomeBtn.classList.add('bg-green-50', 'text-green-700');
+            }
+        }
+        
+        // Event Listeners for Transaction Type
+        typeIncomeBtn.addEventListener('click', () => selectTransactionType('income'));
+        typeExpenseBtn.addEventListener('click', () => selectTransactionType('expense'));
+        
+        // Initialize with expense selected
+        selectTransactionType('expense');
+        
+        // Firebase Auth State Observer with Authorization Check
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // 1. Authorization Check
+                if (ALLOWED_USERS.includes(user.email)) {
+                    // User is authorized
+                    currentUser = user;
+                    showMainApp();
+                    loadTransactions();
+                } else {
+                    // 2. User is NOT authorized, log them out and show error
+                    await signOut(auth);
+                    currentUser = null;
+                    showAuthContainer();
+                    showLoginError("Access Denied: Your Google account is not authorized to use this application. Please contact an administrator.");
+                }
+            } else {
+                // User is signed out
+                currentUser = null;
+                showAuthContainer();
+            }
+            hideLoading();
+        });
+        
+        // Show/Hide Auth and Main App
+        function showAuthContainer() {
+            authContainer.classList.remove('hidden');
+            mainApp.classList.add('hidden');
+            loginError.classList.add('hidden');
+        }
+        
+        function showMainApp() {
+            authContainer.classList.add('hidden');
+            mainApp.classList.remove('hidden');
+            userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
+            userEmail.textContent = currentUser.email;
+        }
+        
+        function showLoading() {
+            loadingOverlay.classList.remove('hidden');
+        }
+        
+        function hideLoading() {
+            loadingOverlay.classList.add('hidden');
+        }
+        
+        // Authentication Functions (Google Sign-In)
+        loginBtn.addEventListener('click', async () => {
+            const provider = new GoogleAuthProvider();
+            showLoading();
+            try {
+                await signInWithPopup(auth, provider);
+                // The onAuthStateChanged listener above handles the rest
+            } catch (error) {
+                hideLoading();
+                showLoginError(getGoogleAuthErrorMessage(error.code));
+            }
+        });
+        
+        logoutBtn.addEventListener('click', async () => {
+            showLoading();
+            try {
+                await signOut(auth);
+                hideLoading();
+            } catch (error) {
+                hideLoading();
+                console.error('Logout error:', error);
+                alert('Failed to logout. Please try again.');
+            }
+        });
+        
+        // Updated error message function for Google Auth
+        function getGoogleAuthErrorMessage(errorCode) {
+            switch(errorCode) {
+                case 'auth/popup-closed-by-user':
+                case 'auth/cancelled-popup-request':
+                    return 'Sign-in process cancelled. Please try again.';
+                case 'auth/unauthorized-domain':
+                    return 'Authentication domain error. Check Firebase Console authorized domains.';
+                case 'auth/auth-domain-config-error':
+                    return 'Firebase authentication domain not configured correctly.';
+                case 'auth/account-exists-with-different-credential':
+                    return 'An account already exists with the same email address but different sign-in credentials.';
+                default:
+                    console.error('Auth Error:', errorCode);
+                    return 'An unexpected error occurred during sign-in. Please ensure Google Sign-in is enabled in Firebase.';
+            }
+        }
+        
+        function showLoginError(message) {
+            loginError.textContent = message;
+            loginError.classList.remove('hidden');
+        }
+        
+        // Helper function for reliable data loading (JSONP)
+        function loadDataFromScript(payload) {
+            scriptDataResponse = null; // Reset the global variable
+            
+            // Convert payload to URL query parameters
+            const params = new URLSearchParams({
+                callback: 'handleScriptResponse',
+                data: JSON.stringify(payload)
+            });
 
-    const sheet = openSheet();
-    if (!sheet) {
-      throw new Error("Could not open the transaction sheet.");
-    }
-    
-    let result = { success: false, message: "Invalid action." };
-    
-    if (request.action === 'loadTransactions') {
-      const transactions = loadAllTransactions(sheet);
-      const balance = calculateCurrentBalance(transactions);
-      
-      result = {
-        success: true,
-        transactions: transactions,
-        balance: balance
-      };
-    }
-    
-    // Return the response wrapped in the callback function name (JSONP)
-    return ContentService.createTextOutput(`${callback}(${JSON.stringify(result)})`)
-      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+            // The URL format for JSONP (GET request)
+            const url = `${GOOGLE_SCRIPT_URL}/exec?${params.toString()}`;
+            
+            // 1. Create a script tag to execute the Apps Script as a JSONP call
+            const script = document.createElement('script');
+            script.src = url;
+            document.body.appendChild(script);
 
-  } catch (error) {
-    Logger.log("doGet Error: " + error.toString());
-    const callback = e.parameter.callback || 'handleScriptResponse';
-    return ContentService.createTextOutput(`${callback}(${JSON.stringify({ 
-      success: false, 
-      message: error.message || "An unexpected server error occurred during GET request." 
-    })})`).setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-}
+            // 2. Wait for the Apps Script to call the window.handleScriptResponse function
+            return new Promise((resolve) => {
+                const timeout = setTimeout(() => {
+                    // Check if data was received (meaning script executed)
+                    if (scriptDataResponse) {
+                        resolve(scriptDataResponse);
+                    } else {
+                        console.error('JSONP Timeout/Failure: Did the Apps Script execute and call the callback?');
+                        resolve({ success: false, message: 'Script execution timeout or failure.' });
+                    }
+                    // Cleanup the script tag
+                    document.body.removeChild(script);
+                }, 10000); 
+            });
+        }
 
-/**
- * Handles POST requests (addTransaction, deleteTransaction).
- * @param {GoogleAppsScript.Events.DoPost} e The event parameter.
- * @returns {GoogleAppsScript.Content.TextOutput} JSON response.
- */
-function doPost(e) {
-  try {
-    const request = JSON.parse(e.postData.contents);
-    
-    // 1. AUTHORIZATION CHECK
-    if (!isUserAuthorized(request.userEmail)) {
-      return ContentService.createTextOutput(JSON.stringify({ 
-        success: false, 
-        message: "Authorization failed: User not authorized to modify data." 
-      })).setMimeType(ContentService.MimeType.JSON);
-    }
-    
-    const sheet = openSheet();
-    if (!sheet) {
-      throw new Error("Could not open the transaction sheet.");
-    }
-    
-    let result = { success: false, message: "Invalid action." };
-    
-    if (request.action === 'addTransaction') {
-      addTransactionToSheet(sheet, request.transaction);
-      result = { success: true };
-      
-    } else if (request.action === 'deleteTransaction') {
-      const deleted = deleteTransactionFromSheet(sheet, request.transactionId);
-      if (deleted) {
-        result = { success: true };
-      } else {
-        result = { success: false, message: "Transaction ID not found." };
-      }
-      
-    }
-    
-    return ContentService.createTextOutput(JSON.stringify(result))
-      .setMimeType(ContentService.MimeType.JSON);
-      
-  } catch (error) {
-    Logger.log("doPost Error: " + error.toString());
-    return ContentService.createTextOutput(JSON.stringify({ 
-      success: false, 
-      message: error.message || "An unexpected server error occurred during POST request." 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-}
+        // Google Apps Script API Functions
+        async function callGoogleScript(action, data = {}) {
+            if (!currentUser) {
+                console.error('No user logged in');
+                return null;
+            }
+            
+            // 1. Prepare payload
+            const payload = {
+                action: action,
+                userId: currentUser.uid,
+                userEmail: currentUser.email, // Passing email for server-side validation
+                ...data
+            };
+            
+            // 2. Decide on method based on action
+            if (action === 'loadTransactions') {
+                // For loading (which needs a response body), use the special script-loading technique (JSONP)
+                return await loadDataFromScript(payload);
+            } else {
+                // For ADD/DELETE (which don't need a response body), use simple POST with 'no-cors'
+                try {
+                    const url = `${GOOGLE_SCRIPT_URL}/exec`;
+                    
+                    await fetch(url, {
+                        method: 'POST',
+                        mode: 'no-cors', 
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    // Assume success if fetch completes without a network error (due to no-cors)
+                    return { success: true };
+                    
+                } catch (error) {
+                    console.error('Error performing script action:', error);
+                    return { success: false, message: 'Network error or script failed to execute.' };
+                }
+            }
+        }
+        
+        // Load Transactions from Google Sheets
+        async function loadTransactions() {
+            if (!currentUser) return;
+            
+            showLoading();
+            try {
+                const result = await callGoogleScript('loadTransactions'); 
+                
+                if (result && result.success) {
+                    transactions = result.transactions || [];
+                    balance = result.balance || 0;
+                    
+                    renderTransactions();
+                    updateStats();
+                    updateBalanceChart();
+                } else {
+                    console.error('Failed to load transactions:', result ? result.message : 'Unknown error');
+                    showNotification(`Failed to load previous transactions. Error: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                console.error('Error loading transactions:', error);
+                showNotification('An unexpected error occurred while loading data.', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Add Transaction
+        addTransactionBtn.addEventListener('click', async () => {
+            const amount = parseFloat(amountInput.value);
+            const description = descriptionInput.value.trim();
+            const category = categorySelect.value;
+            const date = dateInput.value;
+            
+            if (!amount || amount <= 0) {
+                alert('Please enter a valid amount.');
+                return;
+            }
+            
+            if (!description) {
+                alert('Please enter a description.');
+                return;
+            }
+            
+            const transactionAmount = selectedTransactionType === 'expense' ? -amount : amount;
+            const transactionId = 'trans_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            const newTransaction = {
+                id: transactionId,
+                type: selectedTransactionType,
+                amount: transactionAmount,
+                description: description,
+                category: category,
+                date: date,
+                createdAt: new Date().toISOString(),
+                userEmail: currentUser.email
+            };
+            
+            showLoading();
+            try {
+                const result = await callGoogleScript('addTransaction', { transaction: newTransaction });
+                
+                if (result && result.success) {
+                    // Update local state and UI only after successful sheet update
+                    transactions.unshift(newTransaction);
+                    balance += transactionAmount;
+                    
+                    // Reset form
+                    amountInput.value = '';
+                    descriptionInput.value = '';
+                    selectTransactionType('expense'); // Reset to expense
+                    
+                    // Update UI
+                    renderTransactions();
+                    updateStats();
+                    updateBalanceChart();
+                    
+                    showNotification('Transaction added successfully!', 'success');
+                } else {
+                     throw new Error(result ? result.message : 'Google Sheets API failed.');
+                }
+            } catch (error) {
+                console.error('Error adding transaction:', error);
+                showNotification('Failed to add transaction. Check your Google Apps Script logs.', 'error');
+            } finally {
+                hideLoading();
+            }
+        });
+        
+        // Delete Transaction
+        async function deleteTransaction(transactionId, transactionAmount) {
+            if (!confirm('Are you sure you want to delete this transaction?')) {
+                return;
+            }
+            
+            showLoading();
+            try {
+                const result = await callGoogleScript('deleteTransaction', { 
+                    transactionId: transactionId
+                });
+                
+                if (result && result.success) {
+                    // Update locally
+                    transactions = transactions.filter(t => t.id !== transactionId);
+                    balance -= transactionAmount;
+                    
+                    // Update UI
+                    renderTransactions();
+                    updateStats();
+                    updateBalanceChart();
+                    
+                    showNotification('Transaction deleted successfully!', 'success');
+                } else {
+                    throw new Error(result ? result.message : 'Google Sheets API failed.');
+                }
+            } catch (error) {
+                console.error('Error deleting transaction:', error);
+                showNotification('Failed to delete transaction. Check your Google Apps Script logs.', 'error');
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // Render Transactions
+        function renderTransactions() {
+            const today = new Date().toISOString().split('T')[0];
+            
+            // Filter today's transactions
+            const todaysTransactions = transactions.filter(t => t.date === today);
+            
+            // Filter recent transactions (last 10)
+            const recent = transactions.slice(0, 10);
+            
+            // Render today's transactions
+            if (todaysTransactions.length === 0) {
+                transactionsList.innerHTML = `
+                    <div class="text-center py-10 text-gray-500">
+                        <i class="fas fa-exchange-alt text-4xl mb-4"></i>
+                        <p>No transactions for today yet.</p>
+                        <p class="text-sm">Add your first transaction above.</p>
+                    </div>
+                `;
+            } else {
+                transactionsList.innerHTML = todaysTransactions.map((transaction, index) => `
+                    <div class="fade-in transaction-item bg-gray-50 rounded-lg p-4 mb-3 ${index === 0 ? 'border-l-4 border-indigo-500' : ''}">
+                        <div class="flex justify-between items-center">
+                            <div class="flex items-center">
+                                <div class="p-2 rounded-lg ${transaction.amount > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'} mr-4">
+                                    <i class="fas ${transaction.amount > 0 ? 'fa-arrow-down' : 'fa-arrow-up'}"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium">${transaction.description}</p>
+                                    <div class="flex items-center text-sm text-gray-600 mt-1">
+                                        <span class="bg-gray-200 px-2 py-0.5 rounded mr-3">${transaction.category}</span>
+                                        <span>${formatTime(transaction.createdAt)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center">
+                                <span class="text-lg font-bold ${transaction.amount > 0 ? 'text-green-600' : 'text-red-600'} mr-4">
+                                    ${transaction.amount > 0 ? '+' : ''}KSh${Math.abs(transaction.amount).toFixed(2)}
+                                </span>
+                                <button onclick="window.deleteTransaction('${transaction.id}', ${transaction.amount})" 
+                                        class="text-gray-400 hover:text-red-500 transition">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            
+            // Render recent transactions
+            if (recent.length === 0) {
+                recentTransactions.innerHTML = `
+                    <div class="text-center py-8 text-gray-500">
+                        <i class="fas fa-history text-3xl mb-3"></i>
+                        <p>No recent transactions.</p>
+                    </div>
+                `;
+            } else {
+                recentTransactions.innerHTML = recent.map(transaction => `
+                    <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                        <div class="flex items-center truncate">
+                            <div class="p-1.5 rounded mr-3 ${transaction.amount > 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">
+                                <i class="fas ${transaction.amount > 0 ? 'fa-arrow-down' : 'fa-arrow-up'} text-sm"></i>
+                            </div>
+                            <div class="truncate">
+                                <p class="font-medium truncate">${transaction.description}</p>
+                                <p class="text-xs text-gray-600">${formatDate(transaction.date)}</p>
+                            </div>
+                        </div>
+                        <span class="font-bold ${transaction.amount > 0 ? 'text-green-600' : 'text-red-600'}">
+                            ${transaction.amount > 0 ? '+' : ''}KSh${Math.abs(transaction.amount).toFixed(2)}
+                        </span>
+                    </div>
+                `).join('');
+            }
+            
+            updateBalanceDisplay();
+        }
+        
+        // Update Stats
+        function updateStats() {
+            const today = new Date().toISOString().split('T')[0];
+            const todaysTransactions = transactions.filter(t => t.date === today);
+            
+            let income = 0;
+            let expenses = 0;
+            
+            todaysTransactions.forEach(t => {
+                if (t.amount > 0) {
+                    income += t.amount;
+                } else {
+                    expenses += Math.abs(t.amount);
+                }
+            });
+            
+            todayIncome.textContent = `KSh${income.toFixed(2)}`;
+            todayExpenses.textContent = `KSh${expenses.toFixed(2)}`;
+        }
+        
+        // Update Balance Display
+        function updateBalanceDisplay() {
+            currentBalance.textContent = `KSh${balance.toFixed(2)}`;
+        }
+        
+        // Update Balance Chart
+        function updateBalanceChart() {
+            const ctx = document.getElementById('balance-chart').getContext('2d');
+            
+            // Get last 7 days of transactions
+            const last7Days = getLast7Days();
+            const dailyBalances = calculateDailyBalances(last7Days);
+            
+            if (balanceChart) {
+                balanceChart.destroy();
+            }
+            
+            balanceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: last7Days.map(d => formatDate(d, true)),
+                    datasets: [{
+                        label: 'Balance (KSh)',
+                        data: dailyBalances,
+                        borderColor: 'rgb(99, 102, 241)',
+                        backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            },
+                            ticks: {
+                                callback: function(value) {
+                                    return 'KSh' + value;
+                                }
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Helper Functions
+        function formatDate(dateString, short = false) {
+            const date = new Date(dateString);
+            if (short) {
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+            return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+        
+        function formatTime(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+        }
+        
+        function getLast7Days() {
+            const days = [];
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                days.push(date.toISOString().split('T')[0]);
+            }
+            return days;
+        }
+        
+        function calculateDailyBalances(days) {
+            let runningBalance = balance;
+            const dailyBalances = [];
+            
+            // Start from today and go backwards
+            const today = new Date().toISOString().split('T')[0];
+            const todayIndex = days.indexOf(today);
+            
+            if (todayIndex !== -1) {
+                // Calculate balance for each day
+                for (let i = todayIndex; i >= 0; i--) {
+                    const day = days[i];
+                    const dayTransactions = transactions.filter(t => t.date === day);
+                    
+                    // Subtract day's transactions from running balance (since we're going backwards)
+                    dayTransactions.forEach(t => {
+                        runningBalance -= t.amount;
+                    });
+                    
+                    dailyBalances.unshift(runningBalance);
+                }
+            }
+            
+            return dailyBalances;
+        }
+        
+        // Notification function
+        function showNotification(message, type = 'info') {
+            // Remove any existing notifications
+            const existingNotification = document.querySelector('.custom-notification');
+            if (existingNotification) {
+                existingNotification.remove();
+            }
+            
+            // Create notification
+            const notification = document.createElement('div');
+            notification.className = `custom-notification transform transition-transform duration-300 translate-x-full`;
+            
+            // Set color based on type
+            if (type === 'success') {
+                notification.classList.add('bg-green-500', 'text-white');
+            } else if (type === 'error') {
+                notification.classList.add('bg-red-500', 'text-white');
+            } else if (type === 'warning') {
+                notification.classList.add('bg-yellow-500', 'text-white');
+            } else {
+                notification.classList.add('bg-blue-500', 'text-white');
+            }
+            
+            notification.innerHTML = `
+                <div class="flex items-center">
+                    <i class="fas ${type === 'success' ? 'fa-check-circle' : type === 'error' ? 'fa-exclamation-circle' : type === 'warning' ? 'fa-exclamation-triangle' : 'fa-info-circle'} mr-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            // Show notification
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 10);
+            
+            // Hide and remove after 3 seconds
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    notification.remove();
+                }, 300);
+            }, 3000);
+        }
+        
+        // End Day Report
+        endDayBtn.addEventListener('click', generateReport);
+        
+        function generateReport() {
+            const today = new Date().toISOString().split('T')[0];
+            const todaysTransactions = transactions.filter(t => t.date === today);
+            
+            if (todaysTransactions.length === 0) {
+                alert('No transactions for today. Add some transactions before generating a report.');
+                return;
+            }
+            
+            let income = 0;
+            let expenses = 0;
+            let incomeCount = 0;
+            let expenseCount = 0;
+            
+            todaysTransactions.forEach(t => {
+                if (t.amount > 0) {
+                    income += t.amount;
+                    incomeCount++;
+                } else {
+                    expenses += Math.abs(t.amount);
+                    expenseCount++;
+                }
+            });
+            
+            const netChange = income - expenses;
+            const openingBalance = balance - netChange;
+            
+            // Generate report HTML
+            const reportDate = new Date().toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric' 
+            });
+            
+            reportContent.innerHTML = `
+                <div class="report-header mb-8">
+                    <h1 class="text-3xl font-bold text-indigo-700 mb-2">Daily Cash Report</h1>
+                    <p class="text-gray-600">Generated on ${reportDate}</p>
+                    <div class="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div class="bg-gray-50 p-4 rounded-lg">
+                            <p class="text-sm text-gray-600">Opening Balance</p>
+                            <p class="text-2xl font-bold">KSh${openingBalance.toFixed(2)}</p>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg">
+                            <p class="text-sm text-green-600">Total Income</p>
+                            <p class="text-2xl font-bold text-green-700">KSh${income.toFixed(2)}</p>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-lg">
+                            <p class="text-sm text-red-600">Total Expenses</p>
+                            <p class="text-2xl font-bold text-red-700">KSh${expenses.toFixed(2)}</p>
+                        </div>
+                        <div class="bg-indigo-50 p-4 rounded-lg">
+                            <p class="text-sm text-indigo-600">Closing Balance</p>
+                            <p class="text-2xl font-bold text-indigo-700">KSh${balance.toFixed(2)}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mb-8">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Transaction Summary</h2>
+                    <div class="overflow-x-auto">
+                        <table class="w-full border-collapse">
+                            <thead>
+                                <tr class="bg-gray-100">
+                                    <th class="text-left p-3 border">Time</th>
+                                    <th class="text-left p-3 border">Type</th>
+                                    <th class="text-left p-3 border">Description</th>
+                                    <th class="text-left p-3 border">Category</th>
+                                    <th class="text-left p-3 border">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${todaysTransactions.map(t => `
+                                    <tr class="border-b hover:bg-gray-50">
+                                        <td class="p-3 border">${formatTime(t.createdAt)}</td>
+                                        <td class="p-3 border">
+                                            <span class="px-2 py-1 rounded-full text-xs font-medium ${t.amount > 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                                ${t.amount > 0 ? 'Income' : 'Expense'}
+                                            </span>
+                                        </td>
+                                        <td class="p-3 border">${t.description}</td>
+                                        <td class="p-3 border">${t.category}</td>
+                                        <td class="p-3 border font-medium ${t.amount > 0 ? 'text-green-700' : 'text-red-700'}">
+                                            ${t.amount > 0 ? '+' : ''}KSh${Math.abs(t.amount).toFixed(2)}
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="mb-8">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">Category Breakdown</h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h3 class="font-medium text-green-700 mb-2">Income by Category</h3>
+                            ${generateCategoryBreakdown(todaysTransactions.filter(t => t.amount > 0), 'green')}
+                        </div>
+                        <div>
+                            <h3 class="font-medium text-red-700 mb-2">Expenses by Category</h3>
+                            ${generateCategoryBreakdown(todaysTransactions.filter(t => t.amount < 0), 'red')}
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="p-4 bg-gray-50 rounded-lg">
+                    <h3 class="font-bold text-gray-800 mb-2">Report Summary</h3>
+                    <ul class="list-disc pl-5 text-gray-700">
+                        <li>Total transactions today: ${todaysTransactions.length}</li>
+                        <li>Income transactions: ${incomeCount} totaling KSh${income.toFixed(2)}</li>
+                        <li>Expense transactions: ${expenseCount} totaling KSh${expenses.toFixed(2)}</li>
+                        <li>Net change for the day: <span class="font-bold ${netChange >= 0 ? 'text-green-700' : 'text-red-700'}">${netChange >= 0 ? '+' : ''}KSh${netChange.toFixed(2)}</span></li>
+                        <li>Report generated by: ${currentUser.displayName || currentUser.email}</li>
+                    </ul>
+                </div>
+            `;
+            
+            reportModal.classList.remove('hidden');
+        }
+        
+        function generateCategoryBreakdown(transactions, color) {
+            const categoryTotals = {};
+            
+            transactions.forEach(t => {
+                const amount = Math.abs(t.amount);
+                if (categoryTotals[t.category]) {
+                    categoryTotals[t.category] += amount;
+                } else {
+                    categoryTotals[t.category] = amount;
+                }
+            });
+            
+            if (Object.keys(categoryTotals).length === 0) {
+                return '<p class="text-gray-500 italic">No transactions in this category</p>';
+            }
+            
+            const total = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
+            
+            return Object.entries(categoryTotals)
+                .map(([category, amount]) => {
+                    const percentage = ((amount / total) * 100).toFixed(1);
+                    const colorClass = color === 'green' ? 'bg-green-500' : 'bg-red-500';
+                    return `
+                        <div class="mb-3">
+                            <div class="flex justify-between mb-1">
+                                <span class="font-medium">${category}</span>
+                                <span class="font-bold">KSh${amount.toFixed(2)} (${percentage}%)</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="${colorClass} h-2 rounded-full" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+        }
+        
+        // Report Modal Controls
+        closeReportModal.addEventListener('click', () => {
+            reportModal.classList.add('hidden');
+        });
+        
+        printReportBtn.addEventListener('click', () => {
+            window.print();
+        });
+        
+        downloadReportBtn.addEventListener('click', () => {
+            const today = new Date().toISOString().split('T')[0];
+            const todaysTransactions = transactions.filter(t => t.date === today);
+            
+            // Create CSV content
+            let csv = 'Date,Time,Type,Description,Category,Amount\n';
+            
+            todaysTransactions.forEach(t => {
+                const date = new Date(t.createdAt);
+                const time = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                const type = t.amount > 0 ? 'Income' : 'Expense';
+                const amount = Math.abs(t.amount).toFixed(2);
+                
+                csv += `${t.date},${time},${type},"${t.description}",${t.category},KSh${amount}\n`;
+            });
+            
+            // Add summary
+            let income = 0;
+            let expenses = 0;
+            
+            todaysTransactions.forEach(t => {
+                if (t.amount > 0) {
+                    income += t.amount;
+                } else {
+                    expenses += Math.abs(t.amount);
+                }
+            });
+            
+            const netChange = income - expenses;
+            const openingBalance = balance - netChange;
+            
+            csv += `\n\nSUMMARY\n`;
+            csv += `Opening Balance,KSh${openingBalance.toFixed(2)}\n`;
+            csv += `Total Income,KSh${income.toFixed(2)}\n`;
+            csv += `Total Expenses,KSh${expenses.toFixed(2)}\n`;
+            csv += `Net Change,KSh${netChange.toFixed(2)}\n`;
+            csv += `Closing Balance,KSh${balance.toFixed(2)}\n`;
+            csv += `Generated By,${currentUser.displayName || currentUser.email}\n`;
+            csv += `Generated On,${new Date().toLocaleDateString('en-US')}`;
+            
+            // Create and download CSV file
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `petty-cash-report-${today}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('CSV report downloaded successfully!', 'success');
+        });
+        
+        // Initialize App
+        window.addEventListener('load', () => {
+            // Set a timeout to hide loading in case Firebase takes too long
+            setTimeout(() => {
+                hideLoading();
+            }, 3000);
+        });
+        
+        // Make deleteTransaction available globally for onclick handlers
+        window.deleteTransaction = deleteTransaction;
+    </script>
+</body>
+</html>
