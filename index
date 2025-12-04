@@ -1,0 +1,250 @@
+// ====================================================================
+// 🚨 CRITICAL: AUTHORIZATION LIST
+// Add all Google email addresses (including your own) that should have access.
+// This list MUST match the one in your front-end HTML file for full security.
+// ====================================================================
+const ALLOWED_USERS = [
+    "user1@example.com",     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 1
+    "admin@yourdomain.com",  // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 2
+    "john.doe@gmail.com"     // 👈 REPLACE WITH YOUR AUTHORIZED EMAIL 3
+];
+
+const SPREADSHEET_ID = 'YOUR_SPREADSHEET_ID_HERE'; // 👈 OPTIONAL: Replace with your actual Sheet ID for better performance
+const SHEET_NAME = 'Transactions'; // 👈 Ensure this matches your sheet tab name
+
+// ====================================================================
+// HELPER FUNCTIONS
+// ====================================================================
+
+/**
+ * Checks if the provided email is in the authorized list.
+ * @param {string} email The email address to check.
+ * @returns {boolean} True if the user is authorized.
+ */
+function isUserAuthorized(email) {
+  if (!email) return false;
+  return ALLOWED_USERS.includes(email.toLowerCase());
+}
+
+/**
+ * Opens the specified spreadsheet and sheet.
+ * @returns {GoogleAppsScript.Spreadsheet.Sheet | null} The sheet object or null on failure.
+ */
+function openSheet() {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID) || SpreadsheetApp.getActiveSpreadsheet();
+    return ss.getSheetByName(SHEET_NAME);
+  } catch (e) {
+    Logger.log("Error opening sheet: " + e.toString());
+    return null;
+  }
+}
+
+/**
+ * Loads all transactions and converts them into an array of objects.
+ * @returns {Array<Object>} An array of transaction objects.
+ */
+function loadAllTransactions(sheet) {
+  if (!sheet) return [];
+  
+  const range = sheet.getDataRange();
+  if (range.getNumRows() <= 1) { // Only header row exists
+    return [];
+  }
+  
+  const values = range.getValues();
+  const headers = values[0]; // ["ID", "Date", "Time", "Type", "Amount", "Description", "Category", "UserEmail"]
+  const data = values.slice(1);
+  
+  return data.map(row => {
+    // Determine the sign of the amount based on the Type column
+    const type = row[3]; // "Type" column
+    let amount = parseFloat(row[4]); // "Amount" column
+    
+    // Ensure the amount is stored with the correct sign for internal calculation
+    if (type.toLowerCase() === 'expense') {
+        amount = -Math.abs(amount); // Enforce negative for expense
+    } else {
+        amount = Math.abs(amount); // Enforce positive for income
+    }
+    
+    return {
+      id: row[0],
+      date: row[1], // YYYY-MM-DD
+      createdAt: row[2], // ISO 8601 string for time stamp
+      type: type.toLowerCase(),
+      amount: amount, // Signed amount for easy calculation
+      description: row[5],
+      category: row[6],
+      userEmail: row[7]
+    };
+  }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // Sort by most recent first
+}
+
+/**
+ * Calculates the current running balance.
+ * @param {Array<Object>} transactions The array of transaction objects.
+ * @returns {number} The current balance.
+ */
+function calculateCurrentBalance(transactions) {
+  return transactions.reduce((sum, t) => sum + t.amount, 0);
+}
+
+/**
+ * Adds a new transaction to the sheet.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet The sheet object.
+ * @param {Object} transaction The transaction data object.
+ */
+function addTransactionToSheet(sheet, transaction) {
+  const amount = Math.abs(transaction.amount); // Always store positive value in the sheet
+  const type = transaction.amount >= 0 ? 'Income' : 'Expense';
+  
+  sheet.appendRow([
+    transaction.id,
+    transaction.date,
+    transaction.createdAt, // This is the full ISO time string for sorting
+    type,
+    amount,
+    transaction.description,
+    transaction.category,
+    transaction.userEmail
+  ]);
+  SpreadsheetApp.flush(); // Forces the spreadsheet to write the data immediately
+}
+
+/**
+ * Deletes a transaction from the sheet based on its ID.
+ * @param {GoogleAppsScript.Spreadsheet.Sheet} sheet The sheet object.
+ * @param {string} transactionId The ID of the transaction to delete.
+ */
+function deleteTransactionFromSheet(sheet, transactionId) {
+  const data = sheet.getDataRange().getValues();
+  let rowToDelete = -1;
+  
+  // Start from the second row (index 1) to skip header
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === transactionId) { // Column A is the ID
+      rowToDelete = i + 1; // Spreadsheet row number (1-indexed)
+      break;
+    }
+  }
+  
+  if (rowToDelete !== -1) {
+    sheet.deleteRow(rowToDelete);
+    SpreadsheetApp.flush();
+    return true;
+  }
+  return false;
+}
+
+// ====================================================================
+// API ENTRY POINTS
+// ====================================================================
+
+/**
+ * Handles GET requests, primarily used for JSONP loading (loadTransactions).
+ * @param {GoogleAppsScript.Events.DoGet} e The event parameter.
+ * @returns {GoogleAppsScript.Content.TextOutput} JSONP response.
+ */
+function doGet(e) {
+  if (!e.parameter.data) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      message: "No data parameter provided." 
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  
+  try {
+    // Parse the JSON data passed via URL parameter
+    const request = JSON.parse(e.parameter.data);
+    const callback = e.parameter.callback;
+
+    // 1. AUTHORIZATION CHECK
+    if (!isUserAuthorized(request.userEmail)) {
+      return ContentService.createTextOutput(`${callback}(${JSON.stringify({ 
+        success: false, 
+        message: "Authorization failed: User not authorized to view data." 
+      })})`).setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+
+    const sheet = openSheet();
+    if (!sheet) {
+      throw new Error("Could not open the transaction sheet.");
+    }
+    
+    let result = { success: false, message: "Invalid action." };
+    
+    if (request.action === 'loadTransactions') {
+      const transactions = loadAllTransactions(sheet);
+      const balance = calculateCurrentBalance(transactions);
+      
+      result = {
+        success: true,
+        transactions: transactions,
+        balance: balance
+      };
+    }
+    
+    // Return the response wrapped in the callback function name (JSONP)
+    return ContentService.createTextOutput(`${callback}(${JSON.stringify(result)})`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+
+  } catch (error) {
+    Logger.log("doGet Error: " + error.toString());
+    const callback = e.parameter.callback || 'handleScriptResponse';
+    return ContentService.createTextOutput(`${callback}(${JSON.stringify({ 
+      success: false, 
+      message: error.message || "An unexpected server error occurred during GET request." 
+    })})`).setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+}
+
+/**
+ * Handles POST requests (addTransaction, deleteTransaction).
+ * @param {GoogleAppsScript.Events.DoPost} e The event parameter.
+ * @returns {GoogleAppsScript.Content.TextOutput} JSON response.
+ */
+function doPost(e) {
+  try {
+    const request = JSON.parse(e.postData.contents);
+    
+    // 1. AUTHORIZATION CHECK
+    if (!isUserAuthorized(request.userEmail)) {
+      return ContentService.createTextOutput(JSON.stringify({ 
+        success: false, 
+        message: "Authorization failed: User not authorized to modify data." 
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    const sheet = openSheet();
+    if (!sheet) {
+      throw new Error("Could not open the transaction sheet.");
+    }
+    
+    let result = { success: false, message: "Invalid action." };
+    
+    if (request.action === 'addTransaction') {
+      addTransactionToSheet(sheet, request.transaction);
+      result = { success: true };
+      
+    } else if (request.action === 'deleteTransaction') {
+      const deleted = deleteTransactionFromSheet(sheet, request.transactionId);
+      if (deleted) {
+        result = { success: true };
+      } else {
+        result = { success: false, message: "Transaction ID not found." };
+      }
+      
+    }
+    
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+      
+  } catch (error) {
+    Logger.log("doPost Error: " + error.toString());
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      message: error.message || "An unexpected server error occurred during POST request." 
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
